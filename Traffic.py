@@ -1,23 +1,25 @@
 from cmath import *
+import math
 
 def S_PJ_func(cap, k, cap_max):
-    ep = exp(K * (cap - cap_max))
+    ep = exp(k * (cap - cap_max))
     return ep / (1.0 + ep)
 
 def S_PJ(cell):
-    return S_PJ_func(cell.cap, cell.K, cell.cap_max)
+    return 0.0
+    #return S_PJ_func(cell.cap, cell.K, cell.cap_max)
 
 def N_PJ(cell):
     return 0.0
 
 class Edge():
-    def __init__(self, pnt, prob=1.0, delay=1):
+    def __init__(self, pnt, prob=0.25, delay=1):
         self.pnt = pnt
         self.prob = prob
         self.delay = delay
 
 class Cell():
-    def __init__(self, id=(-1, -1, 0), cap=0, K=1.0, cap_max=40, PJ=N_PJ, flow_in=0, flow_out=0):
+    def __init__(self, id=(-1, -1, 0), cap=0, K=1.0, cap_max=40, PJ=N_PJ):
         #runtime data
         self.id = id
         self.cap = cap
@@ -30,8 +32,19 @@ class Cell():
         self.S.append(cap)
         self.time = 0
         self.PJ = PJ
-        self.flow_in = flow_in
-        self.flow_out = flow_out
+        self.flow_in = [0]
+        self.flow_out = [0]
+    def setCap(self, cap):
+        self.cap = cap
+        self.S[-1] = cap
+    def gFlowIn(self, time):
+        if len(self.flow_in) <= time:
+            return 0
+        return self.flow_in[time]
+    def gFlowOut(self, time):
+        if len(self.flow_out) <= time:
+            return 0
+        return self.flow_out[time]
     def addNxt(self, edge):
         self.nxt.append(edge)
     def addPre(self, edge):
@@ -50,15 +63,39 @@ class Cell():
         for e in self.preList():
             it = e.pnt
             d = e.delay
-            flow += 1.0 * it.data(t-d) * e.prob * self.PJ(it)
+            flow += 1.0 * it.data(t-d) * e.prob * (1.0 - self.PJ(it))
         for e in self.nxtList():
             it = e.pnt
             d = e.delay
-            flow += 1.0 * it.data(t-d) * e.prob * (1.0 - self.PJ(it))
-        flow += self.flow_in - self.flow_out
+            flow += 1.0 * it.data(t-d) * e.prob * self.PJ(it)
+        flow += self.gFlowIn(t) - self.gFlowOut(t)
+        if flow < 0:
+            flow = 0
+        flow = math.ceil(flow)
         self.time = t
-        self.S.append(flow)
+        self.S.append(int(flow))
         return flow
+    def fix(self, time, cap_view):
+        while len(self.flow_in) <= time:
+            self.flow_in.append(0)
+        while len(self.flow_out) <= time:
+            self.flow_out.append(0)
+        delta = cap_view - self.S[time]
+        self.flow_out[time] = -delta
+        self.S[time] = cap_view
+        return
+        if self.id[2] == 0:
+            if delta < 0:
+                self.flow_in[time] = 0
+            else:
+                self.S[time] = self.S[time] + delta
+                self.flow_in[time] = delta
+        else:
+            if delta > 0:
+                self.flow_out[time] = 0
+            else:
+                self.S[time] = self.S[time] + delta
+                self.flow_out[time] = -delta
     def action(self, start_time, end_time):
         for i in (1, end_time+1):
             if self.time<i:
@@ -92,7 +129,16 @@ class CellAutomat():
                     j = graph.nxt[j]
                 i = graph.nxt[i]
         print "CellAutomat building complete."
-
+    def reset(self):
+        print "Starting reset threading..."
+        for cell in self.cells:
+            cell.time = 0
+            cell.cap = 0
+            cell.S = [cell.cap]
+        print "Reset complete."
+    def setCap(self, u, v, direct, cap):
+        c = self.gCell(u, v, direct)
+        c.cap = cap
     def linkTo(self, c1, c2):
         edge1 = Edge(c2)
         edge2 = Edge(c1)
@@ -138,6 +184,28 @@ class Graph():
         self.node_num = 0
         self.rdFile(file_path)
 
+    def getCap(self, u, v, time):
+        eID = self.gEdgeID(u, v)
+        if eID == -1:
+            return 0
+        else:
+            return self.caps[eID][time]
+
+    def gEdgeID(self, u, v):
+        if (u, v) in self.edge_map:
+            return self.edge_map[(u, v)]
+        else:
+            return -1
+
+    def edgeList(self):
+        for node in self.nodes:
+            i = node.head
+            u = node.id
+            while i != -1:
+                v = self.pnt[i]
+                i = self.nxt[i]
+                yield (u, v)
+
     def addEdge(self, u, v, c):
         if (u, v) in self.edge_map:
             pt = self.edge_map[(u, v)]
@@ -167,7 +235,47 @@ class Graph():
                 self.addEdge(u, v, int(cap))
         print "Graph building complete."
 
-if __name__=="__main__":
+def getParam():
     g = Graph("graph01.txt")
+    all_time = len(g.caps)
     cam = CellAutomat(g)
-    cam.showCell(18, 19, 1)
+    #init
+    for (u, v) in g.edgeList():
+        cell = cam.gCell(u, v, 1)
+        cell.setCap(g.getCap(u, v, 0))
+        #if cell.S[-1]!=0:
+        #    print cell.id, " ", cell.time, " ", cell.S[-1]
+    for time in range(1, all_time * 2):
+        for cell in cam.cells:
+            cell.step()
+            #if int(cell.S[-1])!=0:
+        #    if cell.S[-1]!=0:
+        #        print cell.id, " ", time , " ", cell.S[-1]
+            if cell.id[2] == 1:
+                cell.fix(time, g.getCap(cell.id[0], cell.id[1], time/2))
+                print cell.flow_in[time], " ", cell.flow_out[time]
+    return cam
+
+def runCellAutomat(cwp, data_file_handle):
+    g = Graph("graph02.txt")
+    all_time = len(g.caps)
+    cwp.reset()
+    for (u, v) in g.edgeList():
+        cell = cwp.gCell(u, v, 1)
+        cell.setCap(g.getCap(u, v, 0))
+    for time in range(1, all_time * 2):
+        for cell in cwp.cells:
+            cell.step()
+            if cell.id[2] == 1 and time % 2 == 0:
+                u = int(cell.id[0])
+                v = int(cell.id[1])
+                #print cell.S[-1]
+                cap = int(cell.S[-1])
+                cap_view = int(g.getCap(cell.id[0], cell.id[1], time/2))
+                data_file_handle.write("%d %d \t| %d \t| %d\n" % (u, v, cap, cap_view))
+
+if __name__=="__main__":
+    cwp = getParam()
+    file_output = open("result.txt", "w")
+    runCellAutomat(cwp, file_output)
+    file_output.close()
