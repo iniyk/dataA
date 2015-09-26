@@ -2,12 +2,12 @@ from cmath import *
 import math
 
 def S_PJ_func(cap, k, cap_max):
-    ep = exp(k * (cap - cap_max))
+    ep = math.exp(k * cap - cap_max)
     return ep / (1.0 + ep)
 
 def S_PJ(cell):
-    return 0.0
-    #return S_PJ_func(cell.cap, cell.K, cell.cap_max)
+    #return 0.0
+    return S_PJ_func(cell.cap, cell.K, cell.cap_max)
 
 def N_PJ(cell):
     return 0.0
@@ -76,12 +76,12 @@ class Cell():
         self.S.append(int(flow))
         return flow
     def fix(self, time, cap_view):
+        delta = cap_view - self.S[time]
         while len(self.flow_in) <= time:
             self.flow_in.append(0)
         while len(self.flow_out) <= time:
-            self.flow_out.append(0)
-        delta = cap_view - self.S[time]
-        self.flow_out[time] = -delta
+            self.flow_out.append(delta)
+        self.flow_out[time] = int(math.ceil((self.flow_out[time] - delta) / 2.0))
         self.S[time] = cap_view
         return
         if self.id[2] == 0:
@@ -233,12 +233,20 @@ class Graph():
             v = int(line_list[1])
             for cap in line_list[2:]:
                 self.addEdge(u, v, int(cap))
+        f.close()
         print "Graph building complete."
 
-def getParam():
-    g = Graph("graph01.txt")
+def buildCellAutomat(path):
+    g = Graph(path)
     all_time = len(g.caps)
     cam = CellAutomat(g)
+    return cam
+
+def getParam(path, cam):
+    g = Graph(path)
+    all_time = len(g.caps)
+    cam.reset()
+    #cam = CellAutomat(g)
     #init
     for (u, v) in g.edgeList():
         cell = cam.gCell(u, v, 1)
@@ -253,11 +261,11 @@ def getParam():
         #        print cell.id, " ", time , " ", cell.S[-1]
             if cell.id[2] == 1:
                 cell.fix(time, g.getCap(cell.id[0], cell.id[1], time/2))
-                print cell.flow_in[time], " ", cell.flow_out[time]
+                #print cell.flow_in[time], " ", cell.flow_out[time]
     return cam
 
 def runCellAutomat(cwp, data_file_handle):
-    g = Graph("graph02.txt")
+    g = Graph("graph05.txt")
     all_time = len(g.caps)
     cwp.reset()
     for (u, v) in g.edgeList():
@@ -273,9 +281,21 @@ def runCellAutomat(cwp, data_file_handle):
                 cap = int(cell.S[-1])
                 cap_view = int(g.getCap(cell.id[0], cell.id[1], time/2))
                 data_file_handle.write("%d %d \t| %d \t| %d\n" % (u, v, cap, cap_view))
+    print "Time len = ", all_time
+    for (u, v) in g.edgeList():
+        cell = cwp.gCell(u, v, 1)
+        view_sum = 0
+        ca_sum = 0
+        for time in range(all_time):
+            view_sum += g.getCap(u, v, time)
+            ca_sum += cwp.gCell(u, v, 1).data(time * 2)
+        print u, " ", v, " ", view_sum, " ", ca_sum
 
 if __name__=="__main__":
-    cwp = getParam()
+    cwp = buildCellAutomat("flow0901.txt")
+    cwp = getParam("flow0904.txt", cwp)
+    cwp = getParam("flow0903.txt", cwp)
+    cwp = getParam("flow0901.txt", cwp)
     file_output = open("result.txt", "w")
     runCellAutomat(cwp, file_output)
     file_output.close()
